@@ -1,6 +1,18 @@
 import Retell from 'retell-sdk';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 const retell = new Retell({ apiKey: process.env.RETELL_API_KEY });
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+const DAY = '24 h';
+const ipLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10, DAY), prefix: 'rl:ip' });
+const phoneLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, DAY), prefix: 'rl:phone' });
+const globalLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(50, DAY), prefix: 'rl:global' });
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -16,6 +28,28 @@ export const handler = async (event) => {
 
   if (!name?.trim() || !phone?.trim()) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Name and phone number are required.' }) };
+  }
+
+  const ip = event.headers['x-nf-client-connection-ip'] ?? 'unknown';
+
+  try {
+    const [ipResult, phoneResult, globalResult] = await Promise.all([
+      ipLimiter.limit(ip),
+      phoneLimiter.limit(phone.trim()),
+      globalLimiter.limit('global'),
+    ]);
+
+    if (!globalResult.success) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'Daily demo limit reached. Please try again tomorrow.' }) };
+    }
+    if (!ipResult.success) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'Too many calls from this IP. Please try again tomorrow.' }) };
+    }
+    if (!phoneResult.success) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'This phone number has reached its daily call limit.' }) };
+    }
+  } catch (err) {
+    console.error('Rate limit check failed, failing open:', err);
   }
 
   try {
