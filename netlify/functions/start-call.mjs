@@ -29,8 +29,8 @@ export const handler = async (event) => {
     });
 
     const DAY = '24 h';
-    const ipLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(2, DAY), prefix: 'rl:ip' });
-    const phoneLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(2, DAY), prefix: 'rl:phone' });
+    const ipLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, DAY), prefix: 'rl:ip' });
+    const phoneLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, DAY), prefix: 'rl:phone' });
     const globalLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(50, DAY), prefix: 'rl:global' });
 
     const [ipResult, phoneResult, globalResult] = await Promise.all([
