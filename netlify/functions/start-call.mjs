@@ -4,16 +4,6 @@ import { Redis } from '@upstash/redis';
 
 const retell = new Retell({ apiKey: process.env.RETELL_API_KEY });
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
-
-const DAY = '24 h';
-const ipLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10, DAY), prefix: 'rl:ip' });
-const phoneLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, DAY), prefix: 'rl:phone' });
-const globalLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(50, DAY), prefix: 'rl:global' });
-
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
@@ -33,6 +23,16 @@ export const handler = async (event) => {
   const ip = event.headers['x-nf-client-connection-ip'] ?? 'unknown';
 
   try {
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+
+    const DAY = '24 h';
+    const ipLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10, DAY), prefix: 'rl:ip' });
+    const phoneLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, DAY), prefix: 'rl:phone' });
+    const globalLimiter = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(50, DAY), prefix: 'rl:global' });
+
     const [ipResult, phoneResult, globalResult] = await Promise.all([
       ipLimiter.limit(ip),
       phoneLimiter.limit(phone.trim()),
@@ -49,7 +49,7 @@ export const handler = async (event) => {
       return { statusCode: 429, body: JSON.stringify({ error: 'This phone number has reached its daily call limit.' }) };
     }
   } catch (err) {
-    console.error('Rate limit check failed, failing open:', err);
+    return { statusCode: 500, body: JSON.stringify({ error: 'Rate limit error', detail: err.message }) };
   }
 
   try {
